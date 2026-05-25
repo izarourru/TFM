@@ -1,0 +1,72 @@
+---
+title: "PCA"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 10, cache = TRUE)
+```
+
+
+## Parameters
+```{r parameters}
+years <- 1970:2021
+lonLim <- c(-9.5, 4.3)
+latLim <- c(36, 44)
+dataset <- "ERA5"
+```
+
+## Library
+```{r library, cache=FALSE, message=FALSE, results='hide'}
+library(visualizeR)
+devtools::load_all("/lustre/gmeteo/WORK/urrutxuai/test/transformeR") # instead of library(transformeR)
+source("/lustre/gmeteo/WORK/urrutxuai/R2/load_data.R")
+```
+
+## Load data and compute PCA
+```{r pca, cache=FALSE}
+if (file.exists("/lustre/gmeteo/WORK/urrutxuai/R2/pca_isi_bui.rds")) {
+  pca <- readRDS("/lustre/gmeteo/WORK/urrutxuai/R2/pca_isi_bui.rds")
+} else {
+  dat_era_isi <- load_data(year = years, lonLim = lonLim, latLim = latLim, what = "ISI", dataset = dataset)
+  dat_era_bui <- load_data(year = years, lonLim = lonLim, latLim = latLim, what = "BUI", dataset = dataset)
+
+  multigrid <- makeMultiGrid(dat_era_isi, dat_era_bui)
+  pca <- prinComp(multigrid, v.exp = c(.95), which.combine = c("ISI", "BUI"),
+                keep.orig = FALSE, imputation = FALSE)
+  saveRDS(pca, "/lustre/gmeteo/WORK/urrutxuai/R2/pca_isi_bui.rds")
+}
+```
+
+## ISI and BUI independently
+```{r}
+# explained variance
+explained_variance_isi <- attr(pca$ISI[[1]], "explained_variance")
+explained_variance_bui <- attr(pca$BUI[[1]], "explained_variance")
+
+plot(explained_variance_isi, type = "b", xlab = "EOF number", ylab = "explained variance", main = "Explained variance of ISI")
+plot(explained_variance_bui, type = "b", xlab = "EOF number", ylab = "explained variance", main = "Explained variance of BUI")
+
+clim_isi <- EOF2clim(pca, ind.var = "ISI", n.eofs = 6, rescale = FALSE)
+
+spatialPlot(clim_isi, rev.colors = TRUE, main = "EOFs of ISI",
+            names.attr = attr(clim_isi$Data, "dimnames")$member)
+
+clim_bui <- EOF2clim(pca, ind.var = "BUI", n.eofs = 6, rescale = FALSE)
+
+spatialPlot(clim_bui, rev.colors = TRUE, main = "EOFs of BUI",
+            names.attr = attr(clim_bui$Data, "dimnames")$member)
+```
+
+
+## Combined
+```{r}
+explained_variance_combined <- attr(pca$COMBINED[[1]], "explained_variance")
+plot(explained_variance_combined, type = "b", xlab = "EOF number", ylab = "explained variance", main = "Explained variance of COMBINED")
+
+clim_combined <- EOF2clim(pca, ind.var = "COMBINED", n.eofs = 6, rescale = FALSE)
+
+spatialPlot(clim_combined, rev.colors = TRUE, main = "COMBINED",
+            names.attr = attr(clim_combined$Data, "dimnames")$member,
+            layout = c(2, 6))
+```
