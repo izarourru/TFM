@@ -1,0 +1,89 @@
+---
+title: "FWR: Fire-Weather Regions"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 8, cache = TRUE)
+```
+
+## Parameters
+```{r parameters}
+years <- 1970:2021
+lonLim <- c(-9.5, 4.3)
+latLim <- c(36, 44)
+dataset <- "ERA5"
+```
+
+## Library
+```{r library, cache=FALSE, message=FALSE, results='hide'}
+source("/lustre/gmeteo/WORK/urrutxuai/R2/load_data.R")
+library(visualizeR)
+devtools::load_all("/lustre/gmeteo/WORK/urrutxuai/test/transformeR") # instead of library(transformeR)
+```
+
+## PCA
+```{r}
+# ISI
+dat_era_isi <- load_data(year = years, lonLim = lonLim, latLim = latLim, what = "ISI", dataset = dataset)
+clim <- climatology(dat_era_isi)
+# BUI
+dat_era_bui <- load_data(year = years, lonLim = lonLim, latLim = latLim, what = "BUI", dataset = dataset)
+
+# convert to ("time", "point")
+data_isi <- array(dat_era_isi$Data, dim = c(dim(dat_era_isi$Data)[1], prod(dim(dat_era_isi$Data)[-1])))
+data_bui <- array(dat_era_bui$Data, dim = c(dim(dat_era_bui$Data)[1], prod(dim(dat_era_bui$Data)[-1])))
+
+rm(dat_era_isi)
+rm(dat_era_bui)
+
+keep_points <- which(colSums(is.na(data_isi)) == 0)
+data_isi <- t(data_isi[, keep_points])
+data_bui <- t(data_bui[, keep_points])
+
+# scale data
+data_isi <- scale(data_isi)
+data_bui <- scale(data_bui)
+
+# combine ISI and BUI
+data_combined <- cbind(data_isi, data_bui)
+
+# compute PCA
+pca_combined <- prcomp(data_combined, center = TRUE, scale. = TRUE)
+
+rm(data_isi)
+rm(data_bui)
+rm(data_combined)
+
+pca_combined_var <- pca_combined$sdev^2
+pca_combined_var_explained <- pca_combined_var / sum(pca_combined_var)
+cumulative_var_explained <- cumsum(pca_combined_var_explained)
+num_components <- which(cumulative_var_explained >= 0.95)[1]
+pca_combined_reduced <- pca_combined$x[, 1:num_components]
+num_components
+```
+
+
+```{r}
+score_k <- numeric(9)
+par(mfrow = c(3, 3))
+for (k in 2:10) {
+  set.seed(123)
+  kmeans_combined <- kmeans(pca_combined_reduced, centers = k, nstart = 25)
+  
+  # add NA values for the removed points
+  kmeans_combined$cluster_full <- rep(NA, prod(dim(clim$Data)[-1]))
+  kmeans_combined$cluster_full[keep_points] <- kmeans_combined$cluster
+  reshaped <- array(kmeans_combined$cluster_full, dim = dim(clim$Data)[-1])
+  
+  clim$Data[1,,] <- reshaped
+  
+  print(spatialPlot(clim, backdrop.theme = "countries", main = paste("Clusters of ISI and BUI with k =", k)))
+
+  score_k[k-1] <- kmeans_combined$tot.withinss
+}
+
+par(mfrow = c(1, 1))
+
+plot(2:10, score_k, type = "b", xlab = "Number of Clusters (k)", ylab = "Total Within-Cluster Sum of Squares")
+```
