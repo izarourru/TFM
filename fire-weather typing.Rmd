@@ -1,0 +1,218 @@
+---
+title: "FWT: Fire-Weather Typing"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 10, cache = TRUE)
+```
+
+
+# PCA
+
+## Parameters
+```{r parameters}
+years <- 1970:2021
+lonLim <- c(-9.5, 4.3)
+latLim <- c(36, 44)
+dataset <- "ERA5"
+```
+
+## Library
+```{r library, cache=FALSE, message=FALSE, results='hide'}
+library(visualizeR)
+devtools::load_all("/lustre/gmeteo/WORK/urrutxuai/test/transformeR") # instead of library(transformeR)
+source("/lustre/gmeteo/WORK/urrutxuai/R2/load_data.R")
+```
+
+## Load data and compute PCA
+```{r pca, cache=FALSE}
+if (file.exists("/lustre/gmeteo/WORK/urrutxuai/R2/pca_isi_bui.rds")) {
+  pca <- readRDS("/lustre/gmeteo/WORK/urrutxuai/R2/pca_isi_bui.rds")
+} else {
+  dat_era_isi <- load_data(year = years, lonLim = lonLim, latLim = latLim, what = "ISI", dataset = dataset)
+  dat_era_bui <- load_data(year = years, lonLim = lonLim, latLim = latLim, what = "BUI", dataset = dataset)
+
+  multigrid <- makeMultiGrid(dat_era_isi, dat_era_bui)
+  pca <- prinComp(multigrid, v.exp = c(.95), which.combine = c("ISI", "BUI"),
+                keep.orig = FALSE, imputation = FALSE)
+  saveRDS(pca, "/lustre/gmeteo/WORK/urrutxuai/R2/pca_isi_bui.rds")
+}
+```
+
+## ISI and BUI independently
+```{r}
+# explained variance
+explained_variance_isi <- attr(pca$ISI[[1]], "explained_variance")
+explained_variance_bui <- attr(pca$BUI[[1]], "explained_variance")
+
+plot(explained_variance_isi, type = "b", xlab = "EOF number", ylab = "explained variance", main = "Explained variance of ISI")
+plot(explained_variance_bui, type = "b", xlab = "EOF number", ylab = "explained variance", main = "Explained variance of BUI")
+
+clim_isi <- EOF2clim(pca, ind.var = "ISI", n.eofs = 6, rescale = FALSE)
+
+spatialPlot(clim_isi, rev.colors = TRUE, main = "EOFs of ISI",
+            names.attr = attr(clim_isi$Data, "dimnames")$member)
+
+clim_bui <- EOF2clim(pca, ind.var = "BUI", n.eofs = 6, rescale = FALSE)
+
+spatialPlot(clim_bui, rev.colors = TRUE, main = "EOFs of BUI",
+            names.attr = attr(clim_bui$Data, "dimnames")$member)
+```
+
+## Combined
+```{r}
+explained_variance_combined <- attr(pca$COMBINED[[1]], "explained_variance")
+plot(explained_variance_combined, type = "b", xlab = "EOF number", ylab = "explained variance", main = "Explained variance of COMBINED")
+
+clim_combined <- EOF2clim(pca, ind.var = "COMBINED", n.eofs = 6, rescale = FALSE)
+
+spatialPlot(clim_combined, rev.colors = TRUE, main = "COMBINED",
+            names.attr = attr(clim_combined$Data, "dimnames")$member,
+            layout = c(2, 6))
+```
+
+## fire-weather typing
+
+```{r}
+date <- attr(pca, "dates_start")
+year <- as.integer(format(as.POSIXct(date, tz="GMT"), "%Y"))
+```
+
+```{r}
+n <- 10
+c <- lapply(2:n, function(k) {
+  kmeans(pca$COMBINED[[1]]$PCs, centers = k, nstart = 5, iter.max = 100)
+})
+
+plot(
+  2:n, sapply(c, function(k) k$tot.withinss),
+  type = "b",
+  pch = 19,
+  xlab = "Number of clusters K",
+  ylab = "Total within-cluster sum of squares"
+)
+
+plot(
+  2:n, sapply(c, function(k) k$betweenss),
+  type = "b",
+  pch = 19,
+  xlab = "Number of clusters K",
+  ylab = "Between-cluster sum of squares"
+)
+
+plot(
+  2:n, sapply(c, function(k) k$betweenss / k$totss),
+  type = "b",
+  pch = 19,
+  xlab = "Number of clusters K",
+  ylab = "Between-cluster sum of squares / Total sum of squares"
+)
+```
+
+
+```{r order}
+dat_era_fwi <- load_data(year = years, lonLim = lonLim, latLim = latLim, what = "FWI", dataset = dataset)
+
+cl <- c[[6]]$cluster
+
+# reorder by FWI
+x <- apply(dat_era_fwi$Data, 1, mean, na.rm = TRUE)
+m <- tapply(x, cl, mean)
+o <- order(m)
+cl <- match(cl, o)
+
+rm(dat_era_fwi)
+```
+
+
+```{r}
+years <- sort(unique(year))
+
+# build matrix (rows = years)
+mat <- matrix(NA, nrow=length(years), ncol=max(table(year)))
+
+for (i in seq_along(years)) {
+  idx <- which(year == years[i])
+  mat[i, 1:length(idx)] <- cl[idx]
+}
+
+cols <- rainbow(length(unique(cl)))
+
+image(1:ncol(mat), 1:nrow(mat),
+      t(mat[nrow(mat):1, ]),   # flip so first year is on top
+      col = cols,
+      axes = FALSE,
+      xlab = "Time (days)",
+      ylab = "Year")
+
+axis(2, at=1:length(years), labels=rev(years))
+
+legend("topright", legend=paste("Cl", 1:length(unique(cl))), fill=cols, cex=0.8)
+```
+
+
+# mean of FWI in each cluster
+
+```{r}
+boxplot(
+  x ~ cl,
+  xlab = "Cluster",
+  ylab = "Spatial mean FWI",
+  col = cols
+)
+legend("topright", legend=paste("Cl", 1:length(unique(cl))), fill=cols, cex=0.8)
+```
+
+
+```{r}
+table(cl)
+```
+
+## mean BUI and ISI for each cluster
+
+```{r}
+# ISI
+dat_era_isi <- load_data(year = years, lonLim = lonLim, latLim = latLim, what = "ISI", dataset = dataset)
+y <- apply(dat_era_isi$Data, 1, mean, na.rm = TRUE)
+rm(dat_era_isi)
+
+boxplot(
+  y ~ cl,
+  xlab = "Cluster",
+  ylab = "Spatial mean ISI",
+  col = cols
+)
+```
+
+```{r}
+# BUI
+dat_era_bui <- load_data(year = years, lonLim = lonLim, latLim = latLim, what = "BUI", dataset = dataset)
+z <- apply(dat_era_bui$Data, 1, mean, na.rm = TRUE)
+rm(dat_era_bui)
+
+boxplot(
+  z ~ cl,
+  xlab = "Cluster",
+  ylab = "Spatial mean BUI",
+  col = cols
+)
+```
+
+
+```{r}
+plot(pca$COMBINED[[1]]$PCs[, 1], pca$COMBINED[[1]]$PCs[, 2], col = cols[cl], xlab = "PC1", ylab = "PC2")
+```
+
+
+```{r}
+# per year
+a <- apply(mat, 1, function(row) mean(row, na.rm = TRUE))
+str(a)
+
+png("~/plot/test", width=10, height=8, units="in", res=300)
+plot(1:52, a)
+dev.off()
+```
+
+
