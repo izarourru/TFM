@@ -7,7 +7,6 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 10, cache = TRUE)
 ```
 
-
 # PCA
 
 ## Parameters
@@ -27,8 +26,8 @@ source("/lustre/gmeteo/WORK/urrutxuai/R2/load_data.R")
 
 ## Load data and compute PCA
 ```{r pca, cache=FALSE}
-if (file.exists("/lustre/gmeteo/WORK/urrutxuai/R2/pca_isi_bui.rds")) {
-  pca <- readRDS("/lustre/gmeteo/WORK/urrutxuai/R2/pca_isi_bui.rds")
+if (file.exists("/lustre/gmeteo/WORK/urrutxuai/TFM/pca_isi_bui.rds")) {
+  pca <- readRDS("/lustre/gmeteo/WORK/urrutxuai/TFM/pca_isi_bui.rds")
 } else {
   dat_era_isi <- load_data(year = years, lonLim = lonLim, latLim = latLim, what = "ISI", dataset = dataset)
   dat_era_bui <- load_data(year = years, lonLim = lonLim, latLim = latLim, what = "BUI", dataset = dataset)
@@ -36,7 +35,8 @@ if (file.exists("/lustre/gmeteo/WORK/urrutxuai/R2/pca_isi_bui.rds")) {
   multigrid <- makeMultiGrid(dat_era_isi, dat_era_bui)
   pca <- prinComp(multigrid, v.exp = c(.95), which.combine = c("ISI", "BUI"),
                 keep.orig = FALSE, imputation = FALSE)
-  saveRDS(pca, "/lustre/gmeteo/WORK/urrutxuai/R2/pca_isi_bui.rds")
+  
+  saveRDS(pca, "/lustre/gmeteo/WORK/urrutxuai/TFM/pca_isi_bui.rds")
 }
 ```
 
@@ -72,12 +72,7 @@ spatialPlot(clim_combined, rev.colors = TRUE, main = "COMBINED",
             layout = c(2, 6))
 ```
 
-## fire-weather typing
-
-```{r}
-date <- attr(pca, "dates_start")
-year <- as.integer(format(as.POSIXct(date, tz="GMT"), "%Y"))
-```
+# fire-weather typing
 
 ```{r}
 n <- 10
@@ -112,6 +107,9 @@ plot(
 
 
 ```{r order}
+date <- attr(pca, "dates_start")
+year <- as.integer(format(as.POSIXct(date, tz="GMT"), "%Y"))
+
 dat_era_fwi <- load_data(year = years, lonLim = lonLim, latLim = latLim, what = "FWI", dataset = dataset)
 
 cl <- c[[5]]$cluster # 6
@@ -127,8 +125,6 @@ rm(dat_era_fwi)
 
 
 ```{r}
-years <- sort(unique(year))
-
 # build matrix (rows = years)
 mat <- matrix(NA, nrow=length(years), ncol=max(table(year)))
 
@@ -137,7 +133,8 @@ for (i in seq_along(years)) {
   mat[i, 1:length(idx)] <- cl[idx]
 }
 
-cols <- rainbow(length(unique(cl)))
+library(RColorBrewer)
+cols <- brewer.pal(length(unique(cl)), "Set2")
 
 image(1:ncol(mat), 1:nrow(mat),
       t(mat[nrow(mat):1, ]),   # flip so first year is on top
@@ -148,11 +145,11 @@ image(1:ncol(mat), 1:nrow(mat),
 
 axis(2, at=1:length(years), labels=rev(years))
 
-legend("topright", legend=paste("Cl", 1:length(unique(cl))), fill=cols, cex=0.8)
+# legend("topleft", legend=rep("", length(unique(cl))), fill=cols, cex=0.8)
 ```
 
 
-# mean of FWI in each cluster
+## mean of FWI in each cluster
 
 ```{r}
 boxplot(
@@ -161,9 +158,8 @@ boxplot(
   ylab = "Spatial mean FWI",
   col = cols
 )
-legend("topright", legend=paste("Cl", 1:length(unique(cl))), fill=cols, cex=0.8)
+legend("topleft", legend=paste("Cl", 1:length(unique(cl))), fill=cols, cex=0.8)
 ```
-
 
 ```{r}
 table(cl)
@@ -183,6 +179,7 @@ boxplot(
   ylab = "Spatial mean ISI",
   col = cols
 )
+legend("topleft", legend=paste("Cl", 1:length(unique(cl))), fill=cols, cex=0.8)
 ```
 
 ```{r}
@@ -197,21 +194,17 @@ boxplot(
   ylab = "Spatial mean BUI",
   col = cols
 )
+legend("topleft", legend=paste("Cl", 1:length(unique(cl))), fill=cols, cex=0.8)
 ```
-
 
 ```{r}
 plot(pca$COMBINED[[1]]$PCs[, 1], pca$COMBINED[[1]]$PCs[, 2], col = cols[cl], xlab = "PC1", ylab = "PC2")
 ```
-
 
 ```{r}
 # save
 saveRDS(list(
   cl = cl,
   date = date
-) , "/lustre/gmeteo/WORK/urrutxuai/R2/fwt_typing.rds")
-
+) , "/lustre/gmeteo/WORK/urrutxuai/TFM/fwt_typing.rds")
 ```
-
-
