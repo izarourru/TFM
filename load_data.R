@@ -26,12 +26,16 @@ load_data <- function(year, lonLim, latLim, what, dataset, mask = TRUE) {
       f <- paste0("/lustre/gmeteo/WORK/urrutxuai/data/data_derived/fwi/", what, "_HARMONIE.nc")
     }
   }
-  
+
   dat <- loadGridData(f, var = var, latLim = latLim, lonLim = lonLim, years = year)
   
-  if (mask == TRUE && dataset == "ERA5" && identical(latLim, c(36, 44)) && identical(lonLim, c(-9.5, 4.3))) {
+  if (mask == TRUE && (dataset == "ERA5" | dataset == "HARMONIE") && identical(latLim, c(36, 44)) && identical(lonLim, c(-9.5, 4.3))) {
     load("/lustre/gmeteo/WORK/urrutxuai/R/mask_2d.RData")
     dat$Data <- sweep(dat$Data, c(2, 3), mask_2d, FUN = "*")
+  }
+  
+  if (dataset == "HARMONIE" && what == "Wind") {
+    dat$Data <- dat$Data / 3.6 # convert from km/h to m/s
   }
   
   return(dat)
