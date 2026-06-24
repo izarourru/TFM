@@ -65,6 +65,10 @@ spatialPlot(clim_bui, rev.colors = TRUE, main = "EOFs of BUI",
 explained_variance_combined <- attr(pca$COMBINED[[1]], "explained_variance")
 plot(explained_variance_combined, type = "b", xlab = "EOF number", ylab = "explained variance", main = "Explained variance of COMBINED")
 
+pdf("~/figure/time_explained_variance.pdf", width = 8, height = 4)
+plot(explained_variance_combined, type = "b", xlab = "EOF number", ylab = "explained variance", main = "Explained variance of COMBINED")
+dev.off()
+
 clim_combined <- EOF2clim(pca, ind.var = "COMBINED", n.eofs = 6, rescale = FALSE)
 
 spatialPlot(clim_combined, rev.colors = TRUE, main = "COMBINED",
@@ -133,19 +137,33 @@ for (i in seq_along(years)) {
   mat[i, 1:length(idx)] <- cl[idx]
 }
 
-library(RColorBrewer)
-cols <- brewer.pal(length(unique(cl)), "Set2")
+cols <-  c("#3288BD", "#66C2A5", "#E6F598",  "#F46D43", "#9E0142", "#E91E8C")
 
 image(1:ncol(mat), 1:nrow(mat),
       t(mat[nrow(mat):1, ]),   # flip so first year is on top
       col = cols,
       axes = FALSE,
-      xlab = "Time (days)",
+      xlab = "Day",
       ylab = "Year")
 
 axis(2, at=1:length(years), labels=rev(years))
 
 # legend("topleft", legend=rep("", length(unique(cl))), fill=cols, cex=0.8)
+```
+
+
+
+```{r}
+pdf("~/figure/time_clusters.pdf", width = 12, height = 8)
+image(1:ncol(mat), 1:nrow(mat),
+      t(mat[nrow(mat):1, ]),   # flip so first year is on top
+      col = cols,
+      axes = FALSE,
+      xlab = "Day",
+      ylab = "Year")
+
+axis(2, at=1:length(years), labels=rev(years))
+dev.off()
 ```
 
 
@@ -159,10 +177,6 @@ boxplot(
   col = cols
 )
 legend("topleft", legend=paste("Cl", 1:length(unique(cl))), fill=cols, cex=0.8)
-```
-
-```{r}
-table(cl)
 ```
 
 ## mean BUI and ISI for each cluster
@@ -197,6 +211,44 @@ boxplot(
 legend("topleft", legend=paste("Cl", 1:length(unique(cl))), fill=cols, cex=0.8)
 ```
 
+
+```{r}
+pdf("~/figure/time_boxplots.pdf", width = 12, height = 5)
+
+par(mfrow = c(1, 3), mar = c(4, 4, 3, 1))
+
+# FWI
+boxplot(
+  x ~ cl,
+  xlab = "Cluster",
+  ylab = "Spatial mean FWI",
+  col = cols,
+  main = "FWI",
+  lwd = 0.8
+)
+
+# ISI
+boxplot(
+  y ~ cl,
+  xlab = "Cluster",
+  ylab = "Spatial mean ISI",
+  col = cols,
+  main = "ISI"
+)
+
+# BUI
+boxplot(
+  z ~ cl,
+  xlab = "Cluster",
+  ylab = "Spatial mean BUI",
+  col = cols,
+  main = "BUI"
+)
+
+dev.off()
+```
+
+
 ```{r}
 plot(pca$COMBINED[[1]]$PCs[, 1], pca$COMBINED[[1]]$PCs[, 2], col = cols[cl], xlab = "PC1", ylab = "PC2")
 ```
@@ -208,3 +260,5 @@ saveRDS(list(
   date = date
 ) , "/lustre/gmeteo/WORK/urrutxuai/TFM/fwt_typing.rds")
 ```
+
+
