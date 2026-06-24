@@ -1,6 +1,6 @@
 library(loadeR)
 
-load_data <- function(year, lonLim, latLim, what, dataset, mask = TRUE) {
+load_data <- function(year, lonLim, latLim, what, dataset, mask = TRUE, season = NULL) {
   if (dataset == "ERA5") {
     if (what == "Wind") {
       var <- "sfcwind"
@@ -27,7 +27,7 @@ load_data <- function(year, lonLim, latLim, what, dataset, mask = TRUE) {
     }
   }
 
-  dat <- loadGridData(f, var = var, latLim = latLim, lonLim = lonLim, years = year)
+  dat <- loadGridData(f, var = var, latLim = latLim, lonLim = lonLim, years = year, season = season)
   
   if (mask == TRUE && (dataset == "ERA5" | dataset == "HARMONIE") && identical(latLim, c(36, 44)) && identical(lonLim, c(-9.5, 4.3))) {
     load("/lustre/gmeteo/WORK/urrutxuai/R/mask_2d.RData")
