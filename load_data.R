@@ -1,7 +1,7 @@
 library(loadeR)
 
 load_data <- function(year, lonLim, latLim, what, dataset, mask = TRUE, season = NULL) {
-  if (dataset == "ERA5") {
+  if (dataset == "ERA5Land") {
     if (what == "Wind") {
       var <- "sfcwind"
       f <- "/lustre/gmeteo/WORK/ARTICULOS/2024_Mirones_FWI_Emulator/data/ncml/sfcwind_ERA5Land.ncml"
@@ -29,7 +29,7 @@ load_data <- function(year, lonLim, latLim, what, dataset, mask = TRUE, season =
 
   dat <- loadGridData(f, var = var, latLim = latLim, lonLim = lonLim, years = year, season = season)
   
-  if (mask == TRUE && (dataset == "ERA5" | dataset == "HARMONIE") && identical(latLim, c(36, 44)) && identical(lonLim, c(-9.5, 4.3))) {
+  if (mask == TRUE && (dataset == "ERA5Land" | dataset == "HARMONIE") && identical(latLim, c(36, 44)) && identical(lonLim, c(-9.5, 4.3))) {
     load("/lustre/gmeteo/WORK/urrutxuai/R/mask_2d.RData")
     dat$Data <- sweep(dat$Data, c(2, 3), mask_2d, FUN = "*")
   }
