@@ -1,0 +1,265 @@
+---
+title: "Comparison"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 8, cache = TRUE)
+```
+
+## Parameters
+```{r parameters}
+years    <- 2014:2021
+lonLim   <- c(-9.5, 4.3)
+latLim   <- c(36, 44)
+datasets  <- c("ERA5Land", "CIDE", "HARMONIE")
+datasets_labels <- c("ERA5-Land", "CIDE", "HARMONIE-AROME")
+variables <- c("FWI", "ISI", "Wind")
+```
+
+## Library
+```{r library, cache=FALSE, message=FALSE, results='hide'}
+library(loadeR)
+library(visualizeR)
+devtools::load_all("transformeR")
+library(ggplot2)
+library(patchwork)
+library(grid)
+library(png)
+library(sp)
+library(raster)
+library(terra)
+source("load_data.R")
+```
+
+## Load region clusters
+```{r clusters}
+clusters_sp <- as(vect("data/cluster_regions.shp"), "Spatial")
+region_obj  <- readRDS("data/region_k3.rds")
+region_mask <- as.vector(drop(region_obj$Data))
+region_lvls <- c("E", "SW", "N")   # cluster 1, 2, 3
+```
+
+## Region labels
+```{r check_region_labels, fig.width=8, fig.height=6, dpi=300, fig.path="figures/"}
+library(RColorBrewer)
+
+cols <- brewer.pal(3, "Set2")
+
+print(spatialPlot(
+  region_obj,
+  backdrop.theme  = "countries",
+  main            = "Region labels",
+  col.regions     = cols,
+  at              = seq(0.5, 3.5, 1),
+  colorkey        = list(labels = list(at = 1:3, labels = region_lvls)),
+  sp.layout       = list(list(clusters_sp, first = FALSE, col = "black", lwd = 1.5))
+))
+```
+
+## Weather-type filter (clusters 5 & 6)
+```{r wt_filter}
+a         <- readRDS("data/fwt_typing.rds")
+in_range  <- a$date >= "2014-01-01" & a$date <= "2021-12-31"
+time_idx  <- which(a$cl[in_range] %in% 5:6)
+```
+
+## Load & filter data
+```{r load_data}
+# dat[[var]][[ds]]
+dat <- setNames(lapply(variables, function(v) {
+  setNames(lapply(datasets, function(ds) {
+    d <- load_data(year = years, lonLim = lonLim, latLim = latLim,
+                   what = v, dataset = ds)
+    subsetDimension(d, dimension = "time", indices = time_idx)
+  }), datasets)
+}), variables)
+```
+
+## Climatologies
+```{r climatologies}
+clim_fun <- function(FUN) list(FUN = function(x) FUN(x, na.rm = TRUE))
+
+clim <- lapply(dat, function(vdat) list(
+  mean = lapply(vdat, climatology, clim.fun = clim_fun(mean)),
+  p95  = lapply(vdat, climatology, clim.fun = clim_fun(
+    function(x, ...) quantile(x, 0.95, ...)))
+))
+
+temporal_metrics <- function(model_grid, reference_grid) {
+  model_ts <- apply(model_grid$Data, 1, mean, na.rm = TRUE)
+  reference_ts <- apply(reference_grid$Data, 1, mean, na.rm = TRUE)
+  valid <- is.finite(model_ts) & is.finite(reference_ts)
+
+  rho_s <- suppressWarnings(cor(model_ts[valid], reference_ts[valid], method = "spearman"))
+  mae   <- mean(abs(model_ts[valid] - reference_ts[valid]), na.rm = TRUE)
+
+  sprintf("ρs = %.2f, MAE = %.2f", rho_s, mae)
+}
+
+comparison_labels <- list(
+  FWI = setNames(lapply(c("ERA5Land", "HARMONIE"), function(ds) {
+    temporal_metrics(dat$FWI[[ds]], dat$FWI$CIDE)
+  }), c("ERA5Land", "HARMONIE")),
+  FWI95 = setNames(lapply(c("ERA5Land", "HARMONIE"), function(ds) {
+    temporal_metrics(dat$FWI[[ds]], dat$FWI$CIDE)
+  }), c("ERA5Land", "HARMONIE")),
+  ISI = setNames(lapply(c("ERA5Land", "HARMONIE"), function(ds) {
+    temporal_metrics(dat$ISI[[ds]], dat$ISI$CIDE)
+  }), c("ERA5Land", "HARMONIE")),
+  Wind = setNames(lapply(c("ERA5Land", "HARMONIE"), function(ds) {
+    temporal_metrics(dat$Wind[[ds]], dat$Wind$CIDE)
+  }), c("ERA5Land", "HARMONIE"))
+)
+```
+
+## Spatial maps
+```{r spatial_maps, fig.width=14, fig.height=4, dpi=300, fig.path="figures/"}
+make_multigrid <- function(clist) {
+  for (i in seq_along(datasets)) {
+    ds <- datasets[i]
+    attr(clist[[ds]]$Variable, "longname") <- datasets_labels[i]
+  }
+  do.call(makeMultiGrid, c(clist, list(skip.temporal.check = TRUE)))
+}
+
+sp_layout <- list(list(clusters_sp, first = FALSE, col = "black", lwd = 1.5))
+
+map_specs <- list(
+  list(grid = make_multigrid(clim$Wind$mean), main = "Wind",       color = "YlGn",   at = FALSE),
+  list(grid = make_multigrid(clim$Wind$p95), main = "Wind95",       color = "YlGn",   at = FALSE),
+  list(grid = make_multigrid(clim$FWI$mean),  main = "FWI",        color = "YlOrRd", at = seq(0, 120, 5)),
+  list(grid = make_multigrid(clim$FWI$p95),   main = "FWI95",    color = "YlOrRd", at = seq(0, 120, 5)),
+  list(grid = make_multigrid(clim$ISI$mean),  main = "ISI",        color = "Blues",  at = FALSE)
+)
+
+for (s in map_specs) {
+  if (!isFALSE(s$at)) {
+    print(spatialPlot(s$grid, main = s$main, layout = c(3, 1),
+                      color.theme = s$color, at = s$at, set.max = 120,
+                      sp.layout = sp_layout))
+  } else {
+    print(spatialPlot(s$grid, main = s$main, layout = c(3, 1),
+                      color.theme = s$color,
+                      sp.layout = sp_layout))
+  }
+}
+```
+
+## Violin plots
+```{r violin_combined, fig.width=8.27, fig.height=11.69, dpi=300, fig.path="figures/"}
+make_violin_df <- function(clist) {
+  do.call(rbind, lapply(seq_along(datasets), function(m) {
+    vals_all <- as.vector(drop(clist[[m]]$Data))
+    do.call(rbind, lapply(seq_along(region_lvls), function(k) {
+      vals <- vals_all[region_mask == k]
+      data.frame(value   = vals[!is.na(vals)],
+                 dataset = datasets_labels[m],
+                 region  = factor(region_lvls[k], levels = region_lvls))
+    }))
+  }))
+}
+
+violin_plot <- function(df, ylab) {
+  ggplot(df, aes(x = dataset, y = value, fill = dataset)) +
+    geom_violin(trim = FALSE, alpha = 0.7) +
+    geom_boxplot(width = 0.15, outlier.shape = NA, fill = "white") +
+    facet_wrap(~region, ncol = length(region_lvls)) +
+    labs(x = NULL, y = ylab) +
+    theme_bw() +
+    theme(legend.position = "none", strip.text = element_text(face = "bold"),
+axis.text.x     = element_text(size = 7, angle = 15, hjust = 1))
+}
+
+violin_specs <- list(
+  list(df = make_violin_df(clim$Wind$mean), ylab = "Wind"),
+  list(df = make_violin_df(clim$FWI$mean),  ylab = "FWI"),
+  list(df = make_violin_df(clim$FWI$p95),   ylab = "FWI95"),
+  list(df = make_violin_df(clim$ISI$mean),  ylab = "ISI")
+)
+
+plots    <- lapply(violin_specs, function(s) violin_plot(s$df, s$ylab))
+combined <- Reduce(`/`, plots)
+print(combined)
+```
+
+## Bias in FWI and FWI95
+```{r bias_fwi}
+# CIDE as reference
+bias_fwi_mean <- setNames(lapply(c("ERA5Land", "HARMONIE"), function(ds) {
+  gridArithmetics(clim$FWI$mean[[ds]], clim$FWI$mean$CIDE, operator = "-")
+}), c("ERA5Land", "HARMONIE"))
+
+bias_fwi_p95 <- setNames(lapply(c("ERA5Land", "HARMONIE"), function(ds) {
+  gridArithmetics(clim$FWI$p95[[ds]], clim$FWI$p95$CIDE, operator = "-")
+}), c("ERA5Land", "HARMONIE"))
+```
+
+```{r bias_fwi_multigrid, fig.width=14, fig.height=6, dpi=300, fig.path="figures/"}
+# build a 3-panel multigrid (ERA5Land, CIDE (zero), HARMONIE)
+bias_fwi_mean_grid <- list(
+  ERA5Land = bias_fwi_mean$ERA5Land,
+  HARMONIE = bias_fwi_mean$HARMONIE
+)
+attr(bias_fwi_mean_grid$ERA5Land$Variable, "longname") <- paste0("ERA5-Land − CIDE ", comparison_labels$FWI$ERA5Land)
+attr(bias_fwi_mean_grid$HARMONIE$Variable, "longname") <- paste0("HARMONIE-AROME − CIDE ", comparison_labels$FWI$HARMONIE)
+spatialPlot(do.call(makeMultiGrid, c(bias_fwi_mean_grid, list(skip.temporal.check = TRUE))), backdrop.theme = "countries",
+            color.theme = "RdBu", rev.colors = TRUE,
+            main      = "FWI Bias",
+            layout    = c(2, 1),
+            sp.layout = sp_layout)
+
+# p95 bias
+bias_fwi_p95_grid <- list(
+  ERA5Land = bias_fwi_p95$ERA5Land,
+  HARMONIE = bias_fwi_p95$HARMONIE
+)
+attr(bias_fwi_p95_grid$ERA5Land$Variable, "longname") <- paste0("ERA5-Land − CIDE ", comparison_labels$FWI95$ERA5Land)
+attr(bias_fwi_p95_grid$HARMONIE$Variable, "longname") <- paste0("HARMONIE-AROME − CIDE ", comparison_labels$FWI95$HARMONIE)
+spatialPlot(do.call(makeMultiGrid, c(bias_fwi_p95_grid, list(skip.temporal.check = TRUE))), backdrop.theme = "countries",
+            color.theme = "RdBu", rev.colors = TRUE,
+            main      = "FWI95 Bias",
+            layout    = c(2, 1),
+            sp.layout = sp_layout)
+```
+
+## Bias in ISI
+```{r bias_isi}
+bias_isi_mean <- setNames(lapply(c("ERA5Land", "HARMONIE"), function(ds) {
+  gridArithmetics(clim$ISI$mean[[ds]], clim$ISI$mean$CIDE, operator = "-")
+}), c("ERA5Land", "HARMONIE"))
+```
+
+```{r bias_isi_multigrid, fig.width=14, fig.height=6, dpi=300, fig.path="figures/"}
+bias_isi_mean_grid <- list(
+  ERA5Land = bias_isi_mean$ERA5Land,
+  HARMONIE = bias_isi_mean$HARMONIE
+)
+attr(bias_isi_mean_grid$ERA5Land$Variable, "longname") <- paste0("ERA5-Land − CIDE ", comparison_labels$ISI$ERA5Land)
+attr(bias_isi_mean_grid$HARMONIE$Variable, "longname") <- paste0("HARMONIE-AROME − CIDE ", comparison_labels$ISI$HARMONIE)
+spatialPlot(do.call(makeMultiGrid, c(bias_isi_mean_grid, list(skip.temporal.check = TRUE))), backdrop.theme = "countries",
+            color.theme = "RdBu", rev.colors = TRUE,
+            main      = "ISI Bias",
+            layout    = c(2, 1),
+            sp.layout = sp_layout)
+```
+
+## Bias in Wind
+```{r bias_wind}
+bias_wind_mean <- setNames(lapply(c("ERA5Land", "HARMONIE"), function(ds) {
+  gridArithmetics(clim$Wind$mean[[ds]], clim$Wind$mean$CIDE, operator = "-")
+}), c("ERA5Land", "HARMONIE"))
+``` 
+```{r bias_wind_multigrid, fig.width=14, fig.height=6, dpi=300, fig.path="figures/"}
+bias_wind_mean_grid <- list(
+  ERA5Land = bias_wind_mean$ERA5Land,
+  HARMONIE = bias_wind_mean$HARMONIE
+)
+attr(bias_wind_mean_grid$ERA5Land$Variable, "longname") <- paste0("ERA5-Land − CIDE ", comparison_labels$Wind$ERA5Land)
+attr(bias_wind_mean_grid$HARMONIE$Variable, "longname") <- paste0("HARMONIE-AROME − CIDE ", comparison_labels$Wind$HARMONIE)
+spatialPlot(do.call(makeMultiGrid, c(bias_wind_mean_grid, list(skip.temporal.check = TRUE))), backdrop.theme = "countries",
+            color.theme = "RdBu", rev.colors = TRUE,
+            main      = "Wind Bias",
+            layout    = c(2, 1),
+            sp.layout = sp_layout)
+```
