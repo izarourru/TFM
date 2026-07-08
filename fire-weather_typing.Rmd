@@ -4,7 +4,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 10, cache = TRUE, cache.path = "cache/")
+knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 10, cache = TRUE)
 ```
 
 # PCA
@@ -33,8 +33,15 @@ if (file.exists("data/pca_isi_bui.rds")) {
   dat_era_bui <- load_data(year = years, lonLim = lonLim, latLim = latLim, what = "BUI", dataset = dataset)
 
   multigrid <- makeMultiGrid(dat_era_isi, dat_era_bui)
+
+  rm(dat_era_isi, dat_era_bui)
+  gc()
+  
   pca <- prinComp(multigrid, v.exp = c(.95), which.combine = c("ISI", "BUI"),
                 keep.orig = FALSE, imputation = FALSE)
+
+  rm(multigrid)
+  gc()
 
   saveRDS(pca, "data/pca_isi_bui.rds")
 }
