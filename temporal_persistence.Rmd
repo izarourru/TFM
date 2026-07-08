@@ -1,0 +1,279 @@
+---
+title: "Temporal persistence 2014:2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 10, cache = TRUE, cache.lazy = FALSE)
+```
+
+## Parameters
+```{r}
+lonLim   <- c(-9.5, 4.3)
+latLim   <- c(36, 44)
+datasets <- c("ERA5Land", "CIDE", "HARMONIE")
+datasets_labels <- c("ERA5-Land", "CIDE", "HARMONIE-AROME")
+years    <- list(ERA5 = 2014:2021, CIDE = 2014:2021, HARMONIE = 2014:2021)
+```
+
+## Library
+```{r, cache=FALSE, message=FALSE, results='hide'}
+library(loadeR)
+library(visualizeR)
+library(transformeR)
+library(sp)
+library(raster)
+library(terra)
+source("load_data.R")
+```
+
+## Region clusters
+```{r}
+clusters_sp <- as(vect("data/cluster_regions.shp"), "Spatial")
+sp_layout   <- list(list(clusters_sp, first = FALSE, col = "black", lwd = 1.5))
+
+make_multigrid <- function(clist, labels = datasets_labels) {
+  if (!is.null(labels)) {
+    for (i in seq_along(clist)) {
+      if (!is.null(clist[[i]]$Variable)) {
+        attr(clist[[i]]$Variable, "longname") <- labels[i]
+      }
+    }
+  }
+  do.call(makeMultiGrid, c(clist, list(skip.temporal.check = TRUE)))
+}
+
+grid_metrics_vs_ref <- function(grid, ref) {
+  x <- as.vector(grid$Data)
+  y <- as.vector(ref$Data)
+  ok <- is.finite(x) & is.finite(y)
+
+  if (!any(ok)) {
+    return(c(rho = NA_real_, mae = NA_real_))
+  }
+
+  c(
+    rho = suppressWarnings(cor(x[ok], y[ok], method = "spearman")),
+    mae = mean(abs(x[ok] - y[ok]))
+  )
+}
+
+label_with_metrics <- function(label, grid, ref, digits = 2) {
+  metrics <- grid_metrics_vs_ref(grid, ref)
+  sprintf("ρs = %.2f | MAE = %.2f",
+          label, digits, metrics[["rho"]], digits, metrics[["mae"]])
+}
+
+label_with_metrics <- function(label, grid, ref, digits = 2) {
+  metrics <- grid_metrics_vs_ref(grid, ref)
+  sprintf("%s: \u03c1s = %.*f | MAE = %.*f",
+          label, digits, metrics[["rho"]], digits, metrics[["mae"]])
+}
+```
+
+## Integral timescale of the ACF
+```{r tau_function}
+tau.1D <- function(ts, lag.max = 30) {
+  if (all(is.na(ts))) return(NA)
+  ts <- ts[!is.na(ts)]
+  if (length(ts) <= lag.max) return(NA)
+
+  rho <- acf(ts, lag.max = lag.max, plot = FALSE)$acf[-1]
+
+  idx0 <- which(rho <= 0)[1]
+  if (!is.na(idx0) && idx0 > 1) {
+    tau <- sum(rho[1:(idx0 - 1)])
+  } else if (!is.na(idx0)) {
+    tau <- rho[1]
+  } else {
+    tau <- sum(rho)
+  }
+  return(tau)
+}
+```
+
+## Load data
+```{r}
+dat <- setNames(lapply(datasets, function(ds) {
+  load_data(year = years[[ds]], lonLim = lonLim, latLim = latLim,
+            what = "FWI", dataset = ds)
+}), datasets)
+```
+
+## ACF integral timescale (tau)
+```{r}
+dat_tau <- lapply(dat, climatology, clim.fun = list(FUN = tau.1D))
+```
+
+```{r tau_multigrid, fig.width=14, fig.height=5, dpi=300, fig.path="figures/"}
+tau_labels <- c(
+  label_with_metrics("ERA5-Land", dat_tau$ERA5Land, dat_tau$CIDE),
+  "CIDE (reference)",
+  label_with_metrics("HARMONIE-AROME", dat_tau$HARMONIE, dat_tau$CIDE)
+)
+spatialPlot(make_multigrid(dat_tau, tau_labels), backdrop.theme = "countries", color.theme = "YlOrRd",
+            at = seq(0, ceiling(max(sapply(dat_tau, \(x) max(x$Data, na.rm = TRUE)))), by = 0.5),
+            main = expression(tau[30]), layout = c(3,1), sp.layout = sp_layout)
+```
+
+## Daily anomalies
+```{r anomalies}
+dat_anomalies <- lapply(dat, scaleGrid, time.frame = "daily")
+```
+
+## ACF integral timescale (tau) (anomalies)
+```{r}
+dat_tau <- lapply(dat_anomalies, climatology, clim.fun = list(FUN = tau.1D))
+```
+
+```{r tau_multigrid_anomalies, fig.width=16, fig.height=5, dpi=300, fig.path="figures/"}
+tau_anom_labels <- c(
+  label_with_metrics("ERA5-Land", dat_tau$ERA5Land, dat_tau$CIDE),
+  "CIDE (reference)",
+  label_with_metrics("HARMONIE-AROME", dat_tau$HARMONIE, dat_tau$CIDE)
+)
+spatialPlot(make_multigrid(dat_tau, tau_anom_labels), backdrop.theme = "countries", color.theme = "YlOrRd",
+            at = seq(0, ceiling(max(sapply(dat_tau, \(x) max(x$Data, na.rm = TRUE)))), by = 0.5),
+            main = expression(tau[30]), layout = c(3,1), sp.layout = sp_layout)
+```
+
+## Differences
+```{r tau_diff_dat}
+delta_era5_cide <- gridArithmetics(dat_tau$ERA5Land, dat_tau$CIDE, operator = "-")
+delta_harmonie_cide <- gridArithmetics(dat_tau$HARMONIE, dat_tau$CIDE, operator = "-")
+
+delta_dat_tau <- list(ERA5Land_CIDE = delta_era5_cide, HARMONIE_CIDE = delta_harmonie_cide)
+```
+
+```{r tau_diff, fig.width=14, fig.height=5, dpi=300, fig.path="figures/"}
+max <- ceiling(max(sapply(delta_dat_tau, \(x) max(abs(x$Data), na.rm = TRUE))))
+spatialPlot(make_multigrid(delta_dat_tau, c(
+              label_with_metrics("ERA5-Land - CIDE", dat_tau$ERA5Land, dat_tau$CIDE),
+              label_with_metrics("HARMONIE-AROME - CIDE", dat_tau$HARMONIE, dat_tau$CIDE)
+            )), 
+            backdrop.theme = "countries", color.theme = "RdBu", rev.colors = TRUE,
+            at = seq(-max, max, 0.25), main = expression("Difference in " * tau[30]), layout = c(2,1), sp.layout = sp_layout)
+```
+
+# Spell
+
+## Run-length statistics
+```{r run_functions}
+mean_run_yr <- function(x) {
+  r    <- rle(x)
+  runs <- r$lengths[r$values == 1]
+  if (length(runs) == 0) return(0)
+  mean(runs)
+}
+
+max_run_yr <- function(x) {
+  r    <- rle(x)
+  runs <- r$lengths[r$values == 1]
+  if (length(runs) == 0) return(0)
+  max(runs)
+}
+```
+
+## P95 excedance
+```{r excedance}
+p95 <- lapply(dat, climatology,
+              clim.fun = list(FUN = "quantile", probs = 0.95, na.rm = TRUE))
+
+dat_exc <- setNames(lapply(datasets, function(ds) {
+  out          <- dat[[ds]]
+  out$Data     <- 1L * sweep(dat[[ds]]$Data, c(2, 3), p95[[ds]]$Data, FUN = ">")
+  attributes(out$Data) <- attributes(dat[[ds]]$Data)
+  out
+}), datasets)
+```
+
+## Annual run-length aggregation
+```{r run_aggregate}
+dat_mean_run <- lapply(dat_exc, aggregateGrid, aggr.y = list(FUN = mean_run_yr))
+dat_max_run  <- lapply(dat_exc, aggregateGrid, aggr.y = list(FUN = max_run_yr))
+```
+
+## Climatological summaries
+```{r run_climatology}
+clim_mean <- lapply(dat_mean_run, climatology, clim.fun = list(FUN = mean, na.rm = TRUE))
+clim_sd   <- lapply(dat_mean_run, climatology, clim.fun = list(FUN = sd,   na.rm = TRUE))
+clim_max  <- lapply(dat_max_run,  climatology, clim.fun = list(FUN = mean, na.rm = TRUE))
+```
+
+## Mean annual event duration
+```{r mean_run_multigrid, fig.width=16, fig.height=5, dpi=300, fig.path="figures/", warning=FALSE}
+mean_run_grid <- list(ERA5Land = clim_mean$ERA5Land, CIDE = clim_mean$CIDE, HARMONIE = clim_mean$HARMONIE)
+mean_run_labels <- c(
+  label_with_metrics("ERA5-Land", clim_mean$ERA5Land, clim_mean$CIDE),
+  "CIDE (reference)",
+  label_with_metrics("HARMONIE-AROME", clim_mean$HARMONIE, clim_mean$CIDE)
+)
+spatialPlot(make_multigrid(mean_run_grid, mean_run_labels), backdrop.theme = "countries", color.theme = "YlOrRd",
+            at = seq(0, ceiling(max(sapply(mean_run_grid, \(x) max(x$Data, na.rm = TRUE)))), by = 0.5),
+            main = "Climatology of mean annual FWI>P95 event duration (days)", layout = c(3,1), sp.layout = sp_layout)
+```
+
+## SD of spell length
+```{r sd_run_multigrid, fig.width=16, fig.height=5, dpi=300, fig.path="figures/", warning=FALSE}
+sd_run_grid <- list(ERA5Land = clim_sd$ERA5Land, CIDE = clim_sd$CIDE, HARMONIE = clim_sd$HARMONIE)
+sd_run_labels <- c(
+  label_with_metrics("ERA5-Land", clim_sd$ERA5Land, clim_sd$CIDE),
+  "CIDE (reference)",
+  label_with_metrics("HARMONIE-AROME", clim_sd$HARMONIE, clim_sd$CIDE)
+)
+spatialPlot(make_multigrid(sd_run_grid, sd_run_labels), backdrop.theme = "countries", color.theme = "YlOrRd",
+            at = seq(0, ceiling(max(sapply(sd_run_grid, \(x) max(x$Data, na.rm = TRUE)))), by = 0.5),
+            main = "SD of annual mean FWI>P95 event duration (days)", layout = c(3,1), sp.layout = sp_layout)
+```
+
+## Max annual event duration
+```{r max_run_multigrid, fig.width=16, fig.height=5, dpi=300, fig.path="figures/", warning=FALSE}
+max_run_grid <- list(ERA5Land = clim_max$ERA5Land, CIDE = clim_max$CIDE, HARMONIE = clim_max$HARMONIE)
+max_run_labels <- c(
+  label_with_metrics("ERA5-Land", clim_max$ERA5Land, clim_max$CIDE),
+  "CIDE (reference)",
+  label_with_metrics("HARMONIE-AROME", clim_max$HARMONIE, clim_max$CIDE)
+)
+spatialPlot(make_multigrid(max_run_grid, max_run_labels), backdrop.theme = "countries", color.theme = "YlOrRd",
+            at = seq(0, ceiling(max(sapply(max_run_grid, \(x) max(x$Data, na.rm = TRUE)))), by = 0.5),
+            main = "Climatology of maximum annual FWI>P95 event duration (days)", layout = c(3,1), sp.layout = sp_layout)
+```
+
+## Differences (ERA5 − CIDE)
+```{r run_diff}
+delta_mean <- list(ERA5Land = gridArithmetics(clim_mean$ERA5Land, clim_mean$CIDE, operator = "-"),
+                   HARMONIE = gridArithmetics(clim_mean$HARMONIE, clim_mean$CIDE, operator = "-"))
+delta_sd   <- list(ERA5Land = gridArithmetics(clim_sd$ERA5Land,   clim_sd$CIDE,   operator = "-"),
+                   HARMONIE = gridArithmetics(clim_sd$HARMONIE,   clim_sd$CIDE,   operator = "-"))
+delta_max  <- list(ERA5Land = gridArithmetics(clim_max$ERA5Land,  clim_max$CIDE,  operator = "-"),
+                   HARMONIE = gridArithmetics(clim_max$HARMONIE,  clim_max$CIDE,  operator = "-"))
+```
+
+```{r diff_mean_run, fig.width=14, fig.height=5, dpi=300, fig.path="figures/", warning=FALSE}
+spatialPlot(make_multigrid(delta_mean, c(
+              label_with_metrics("ERA5-Land - CIDE", clim_mean$ERA5Land, clim_mean$CIDE),
+              label_with_metrics("HARMONIE-AROME - CIDE", clim_mean$HARMONIE, clim_mean$CIDE)
+            )), backdrop.theme = "countries",
+            color.theme = "RdBu", rev.colors = TRUE,
+            main      = "Difference in Climatology of mean annual FWI>P95 spell length (days)",
+            sp.layout = sp_layout, layout = c(2,1))
+```
+
+```{r diff_sd_run, fig.width=14, fig.height=5, dpi=300, fig.path="figures/", warning=FALSE}
+spatialPlot(make_multigrid(delta_sd, c(
+              label_with_metrics("ERA5-Land - CIDE", clim_sd$ERA5Land, clim_sd$CIDE),
+              label_with_metrics("HARMONIE-AROME - CIDE", clim_sd$HARMONIE, clim_sd$CIDE)
+            )), backdrop.theme = "countries", color.theme = "RdBu", rev.colors = TRUE,
+            main      = "Difference in Climatology of SD of annual mean FWI>P95 spell length (days)",
+            sp.layout = sp_layout, layout = c(2,1))
+```
+
+```{r diff_max_run, fig.width=14, fig.height=5, dpi=300, fig.path="figures/", warning=FALSE}
+spatialPlot(make_multigrid(delta_max, c(
+              label_with_metrics("ERA5-Land - CIDE", clim_max$ERA5Land, clim_max$CIDE),
+              label_with_metrics("HARMONIE-AROME - CIDE", clim_max$HARMONIE, clim_max$CIDE)
+            )), backdrop.theme = "countries", color.theme = "RdBu", rev.colors = TRUE,
+            main      = "Difference in Climatology of maximum annual FWI>P95 event duration (days)",
+            sp.layout = sp_layout, layout = c(2,1))
+```
+
