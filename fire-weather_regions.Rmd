@@ -4,7 +4,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 8, cache = TRUE, cache.path = "cache/")
+knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 8, cache = TRUE)
 ```
 
 ## Parameters
@@ -70,12 +70,6 @@ plot(cumulative_var_explained[1:which(cumulative_var_explained >= 0.95)[1]], typ
 num_components <- which(cumulative_var_explained >= 0.95)[1]
 pca_combined_reduced <- pca_combined$x[, 1:num_components]
 num_components
-# 
-# rm(pca_combined)
-
-# plot(cumulative_var_explained, type = "b", xlab = "Number of Principal Components", ylab = "Cumulative Variance Explained", main = "PCA Variance Explained")
-
-# plot(cumulative_var_explained[1:num_components], type = "b", xlab = "Number of Principal Components", ylab = "Cumulative Variance Explained", main = "PCA Variance Explained")
 ```
 
 ```{r region_tss, fig.width=9, fig.height=6, dpi=300, fig.path="figures/"}
@@ -147,8 +141,6 @@ grid.arrange(
 
 ```{r save}
 clim <- kms[[3]]
-# 
-# print(spatialPlot(clim, backdrop.theme = "countries", main = paste("Clusters of ISI and BUI with k = 3")))
 
 saveRDS(clim, "data/region_k3.rds")
 ```
@@ -195,17 +187,6 @@ writeVector(clusters, "data/cluster_regions.shp", overwrite = TRUE)
 library(sp)
 library(raster)
 library(terra)
-# clusters_sp <- as(vect("data/cluster_regions.shp"), "Spatial")
-# print(spatialPlot(clim, backdrop.theme = "countries", main = "Clusters of ISI and BUI with k = 3",
-#                   sp.layout = list(list(clusters_sp, first = FALSE, col = "black", lwd = 1.5)))
-#           col.regions = cols,
-#     at = seq(0.5, K + 0.5, 1),
-#     colorkey = list(
-#       labels = list(at = 1:K,
-#         labels = 1:K
-#       )
-#     )
-#       )
 
 clusters_sp <- as(vect("data/cluster_regions.shp"), "Spatial")
 K <- 3
