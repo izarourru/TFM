@@ -1,0 +1,82 @@
+---
+title: "ISI vs BUI"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 10, cache = TRUE, cache.lazy = FALSE)
+```
+
+## Parameters
+```{r}
+years <- 1970:2021
+lonLim <- c(-9.5, 4.3)
+latLim <- c(36, 44)
+dataset <- "ERA5Land"
+```
+
+## Libraries
+```{r, cache=FALSE, message=FALSE, results='hide'}
+library(loadeR)
+library(visualizeR)
+library(transformeR)
+source("load_data.R")
+library(RColorBrewer)
+```
+
+
+```{r load_data}
+dat_fwi_era <- load_data(year = years, lonLim = lonLim, latLim = latLim,
+                         what = "FWI", dataset = "ERA5Land")
+
+dat_isi_era <- load_data(year = years, lonLim = lonLim, latLim = latLim,
+                         what = "ISI", dataset = "ERA5Land")
+
+dat_bui_era <- load_data(year = years, lonLim = lonLim, latLim = latLim,
+                         what = "BUI", dataset = "ERA5Land")
+
+dat_to_series <- function(grid) {
+    data.frame(
+        date = grid$Dates$start,
+        value = as.vector(drop(grid$Data))
+    )
+}
+
+isi_series <- dat_to_series(dat_isi_era)
+bui_series <- dat_to_series(dat_bui_era)
+fwi_series <- dat_to_series(dat_fwi_era)
+
+plot_df <- data.frame(
+    date = isi_series$date,
+    isi = isi_series$value,
+    bui = bui_series$value,
+    fwi = fwi_series$value
+)
+
+fwi_palette <- colorRampPalette(rev(brewer.pal(9, "YlOrRd")))(100)
+fwi_bins <- cut(plot_df$fwi, breaks = 100, include.lowest = TRUE)
+fwi_breaks <- pretty(range(plot_df$fwi, na.rm = TRUE), n = 10)
+fwi_breaks <- unique(fwi_breaks)
+fwi_legend_idx <- cut((head(fwi_breaks, -1) + tail(fwi_breaks, -1)) / 2,
+                      breaks = 100,
+                      include.lowest = TRUE)
+```
+
+
+```{r ISIBUI, fig.path="figures/"}
+fwi_palette <- rev(fwi_palette)
+plot(plot_df$isi, plot_df$bui,
+     pch = 16,
+     cex = 0.01,
+     col = adjustcolor(fwi_palette[fwi_bins], alpha.f = 0.6),
+     xlab = "ISI",
+     ylab = "BUI",
+     main = "ISI vs BUI coloured by FWI")
+
+legend("topright",
+       legend = paste(head(fwi_breaks, -1), tail(fwi_breaks, -1), sep = " - "),
+       col = fwi_palette[fwi_legend_idx],  # keep legend fully opaque
+       pch = 16,
+       bty = "n",
+       title = "FWI range")
+```
