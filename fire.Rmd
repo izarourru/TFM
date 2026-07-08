@@ -1,0 +1,173 @@
+---
+title: "Fire activity"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 10, cache = TRUE, cache.lazy = FALSE)
+```
+
+## Parameters
+```{r}
+lonLim <- c(-9.5, 4.3)
+latLim <- c(36, 44)
+years  <- 1984:2021
+file_ba <- "/lustre/gmeteo/WORK/urrutxuai/data/firespain_025_WGS84_v0.3.nc"
+fire_season <- c(7, 8)
+```
+
+
+## Libraries
+```{r, cache=FALSE, message=FALSE, results='hide'}
+library(loadeR)
+library(visualizeR)
+library(transformeR)
+source("load_data.R")
+library(RColorBrewer)
+```
+
+## Load fire data
+```{r}
+dat_ba <- loadGridData(file_ba, var = "ba", latLim = latLim, lonLim = lonLim, years = years)
+```
+
+## Fire map
+```{r fire_map, fig.width=8, fig.height=6, dpi=300, fig.path="figures/"}
+total_burned_area <- climatology(dat_ba, clim.fun = list(FUN = function(x) sum(x, na.rm = FALSE)))
+spatialPlot(total_burned_area, main = "Total burned area (ha)", color.theme = "YlOrRd", backdrop.theme = "countries")
+```
+
+```{r fire_count_map, fig.width=8, fig.height=6, dpi=300, fig.path="figures/"}
+fire_count <- climatology(dat_ba, clim.fun = list(FUN = function(x) sum(x > 50, na.rm = FALSE)))
+spatialPlot(fire_count, main = "Number of fires > 50 ha", color.theme = "YlOrRd", backdrop.theme = "countries")
+```
+
+```{r fire_data_prep}
+# Load data
+dat_ba <- loadGridData(file_ba, var = "ba", latLim = latLim, lonLim = lonLim,
+                       years = years, season = fire_season)
+
+dat_fwi_era <- load_data(year = years, lonLim = lonLim, latLim = latLim,
+                         what = "FWI", dataset = "ERA5Land", season = fire_season)
+
+dat_fwi_cide <- load_data(year = years, lonLim = lonLim, latLim = latLim,
+                          what = "FWI", dataset = "CIDE", season = fire_season)
+```
+
+
+```{r summarize_fire_fwi}
+n_fire_50 = aggregateGrid(dat_ba, aggr.y = list(FUN = function(x) sum(x > 500,  na.rm = TRUE)))
+n_fire_100 = aggregateGrid(dat_ba, aggr.y = list(FUN = function(x) sum(x > 100, na.rm = TRUE)))
+
+p90_era = aggregateGrid(dat_fwi_era, aggr.y = list(FUN = "quantile", probs = 0.9, na.rm = TRUE))
+p90_cide = aggregateGrid(dat_fwi_cide, aggr.y = list(FUN = "quantile", probs = 0.9, na.rm = TRUE))
+```
+
+
+```{r make_region_masks}
+to_mat <- function(grid) matrix(grid$Data, nrow = dim(grid$Data)[1])
+
+ba_mats  <- lapply(list(
+  "n_fire_50" =  n_fire_50, 
+  "n_fire_100" = n_fire_100
+),  to_mat)
+fwi_mats <- lapply(list(
+  "p90_era" = p90_era, 
+  "p90_cide" = p90_cide
+), to_mat)
+```
+
+
+```{r cluster_regions}
+K <- 3
+
+kmeans_all <- readRDS("data/kmeans_results.rds")
+kmeans_all <- kmeans_all[-1]
+names(kmeans_all) <- paste0("k", 2:10)
+
+ref_grid <- getGrid(dat_ba)
+
+mask_orig <- as.vector(drop(kmeans_all[[paste0("k", K)]]$Data))
+mask_rg   <- as.vector(drop(
+  interpGrid(kmeans_all[[paste0("k", K)]], new.coordinates = ref_grid, method = "nearest")$Data
+))
+
+regions <- lapply(seq_len(K), function(r) {
+  
+  cells    <- which(mask_orig == r)
+  cells_rg <- which(mask_rg   == r)
+  
+  list(
+    # Fires
+    n_fire_50  = rowSums(ba_mats$n_fire_50[,  cells_rg, drop = FALSE], na.rm = TRUE),
+    n_fire_100 = rowSums(ba_mats$n_fire_100[, cells_rg, drop = FALSE], na.rm = TRUE),
+    
+    # FWI
+    fwi_p90_era = apply(fwi_mats$p90_era[, cells, drop = FALSE], 1, max, na.rm = TRUE),
+    fwi_p90_cide = apply(fwi_mats$p90_cide[, cells, drop = FALSE], 1, max, na.rm = TRUE))
+})
+```
+
+
+```{r define_fwi_fire_plot}
+plot_fwi_fire <- function(fwi, fire,
+                          main = "FWI vs Fire relationship") {
+  
+  ok <- complete.cases(fwi, fire) & is.finite(fwi) & is.finite(fire)
+  
+  plot(fwi[ok], fire[ok],
+       pch = 16,
+       col = rgb(0, 0, 0, 0.4),
+       xlab = "FWI P90",
+       ylab = "number of fires >50",
+       main = main)
+  
+  # add regression line
+  model <- lm(fire[ok] ~ fwi[ok])
+  abline(model, col = "red", lwd = 2)
+  
+  r2 <- summary(model)$r.squared
+  legend("topleft", legend = paste0("r² = ", round(r2, 3)), bty = "n")
+
+  print(summary(model))
+}
+```
+
+
+```{r plot_regions_map, fig.width=9, fig.height=5, dpi=300, fig.path="figures/"}
+lab <- c("E", "SW", "N")
+
+print(spatialPlot(
+  kmeans_all[[paste0("k", K)]],
+  backdrop.theme = "countries",
+  col.regions = brewer.pal(K, "Set2"),
+  at = seq(0.5, K + 0.5, 1),
+  colorkey = list(
+    labels = list(
+      at = c(1, 2, 3),
+      labels = c("E", "SW", "N")
+    )
+  )
+))
+```
+
+
+```{r plot_region_scatter, fig.width=8, fig.height=4, dpi=300, fig.path="figures/"}
+for (i in seq_along(regions)) {
+  
+  par(mfrow = c(1, 2))
+  
+  plot_fwi_fire(
+    regions[[i]]$fwi_p90_era,
+    regions[[i]]$n_fire_50,
+    main = paste0("Region ", lab[i], ": ERA5-Land")
+  )
+  
+  plot_fwi_fire(
+    regions[[i]]$fwi_p90_cide,
+    regions[[i]]$n_fire_50,
+    main = paste0("Region ", lab[i], ": CIDE")
+  )
+}
+```
+
