@@ -1,0 +1,130 @@
+---
+title: "Data Sources"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 10, cache = TRUE, cache.lazy = FALSE)
+options(java.parameters = "-Xmx58g")
+```
+
+
+```{r}
+library(loadeR)
+library(visualizeR)
+
+years    <- 2014:2021 #common years
+
+f_era <- "/lustre/gmeteo/WORK/ARTICULOS/2024_Mirones_FWI_Emulator/data/ncml/sfcwind_ERA5Land.ncml"
+f_cide <- "/lustre/gmeteo/WORK/urrutxuai/data/ncml/CIDE_sfcWind_1961_2021.ncml"
+f_harmonie <- "/lustre/gmeteo/WORK/urrutxuai/data/HARMONIE-AROME/ncml/data/sfcWind.ncml"
+```
+
+```{r}
+dataInventory(f_era)
+dataInventory(f_cide)
+dataInventory(f_harmonie)
+```
+
+
+```{r wind_plot_era, fig.width=10, fig.height=8, dpi=300, fig.path="figures/"}
+dat_era <- loadGridData(f_era, var = "sfcwind", aggr.m = "mean")
+clim_era <- climatology(dat_era)
+rm(dat_era); gc()
+spatialPlot(clim_era, backdrop.theme = "countries", color.theme = "YlGn", main = "ERA5-Land")
+```
+
+```{r wind_plot_cide, fig.width=10, fig.height=8, dpi=300, fig.path="figures/"}
+dat_cide <- loadGridData(f_cide, var = "sfcWind", aggr.m = "mean")
+clim_cide <- climatology(dat_cide)
+rm(dat_cide); gc()
+spatialPlot(clim_cide, backdrop.theme = "countries", color.theme = "YlGn", main = "CIDE")
+```
+
+```{r wind_plot_harmonie, fig.width=10, fig.height=8, dpi=300, fig.path="figures/"}
+dat_harmonie <- loadGridData(f_harmonie, var = "sfcWind", aggr.m = "mean")
+# km/h to m/s
+dat_harmonie$Data <- dat_harmonie$Data / 3.6
+clim_harmonie <- climatology(dat_harmonie)
+rm(dat_harmonie); gc()
+spatialPlot(clim_harmonie, backdrop.theme = "countries", color.theme = "YlGn", main = "HARMONIE-AROME")
+```
+
+
+```{r}
+
+library(loadeR)
+
+f_harmonie <- "/lustre/gmeteo/WORK/urrutxuai/data/HARMONIE-AROME/ncml/data/sfcWind.ncml"
+
+f_cide <- "/lustre/gmeteo/WORK/urrutxuai/data/ncml/CIDE_sfcWind_1961_2021.ncml"
+
+f_era <- "/lustre/gmeteo/WORK/ARTICULOS/2024_Mirones_FWI_Emulator/data/ncml/sfcwind_ERA5Land.ncml"
+  
+  
+dataInventory(f_cide)
+dataInventory(f_harmonie)
+dataInventory(f_era)
+
+
+hr.dir <- "/lustre/gmeteo/WORK/ARTICULOS/2024_Mirones_FWI_Emulator/data/ncml/hurs_ERA5Land.ncml"
+pr.dir <- "/lustre/gmeteo/WORK/ARTICULOS/2024_Mirones_FWI_Emulator/data/ncml/tp12_ERA5Land.ncml"
+tas.dir <- "/lustre/gmeteo/WORK/ARTICULOS/2024_Mirones_FWI_Emulator/data/ncml/t2m_ERA5Land.ncml"
+
+dataInventory(hr.dir) # "near-surface relative humidity"
+dataInventory(pr.dir) # "Accumulated precipitation during the last 24 hours"
+dataInventory(tas.dir) # "2 metre temperature"
+# 
+f_era <- "/lustre/gmeteo/PTICLIMA/DATA/REANALYSIS/ERA5-Land/data/Iberia/day/sfcwind/2021/sfcwind_ERA5-Land_202112.nc"
+  # "/lustre/gmeteo/WORK/ARTICULOS/2024_Mirones_FWI_Emulator/data/ncml/sfcwind_ERA5Land.ncml"
+f_cide <- "/lustre/gmeteo/WORK/urrutxuai/data/CIDE/sfcWind_2016.nc"
+  # "/lustre/gmeteo/WORK/urrutxuai/data/ncml/CIDE_sfcWind_1961_2021.ncml"
+f_harmonie <- "/lustre/gmeteo/WORK/urrutxuai/data/HARMONIE-AROME/data/wss/sfcWind_2024.nc"
+  # "/lustre/gmeteo/WORK/urrutxuai/data/HARMONIE-AROME/ncml/data/sfcWind.ncml"
+
+library(ncdf4)
+
+nc_era <- nc_open(f_era)
+print(nc_era)
+
+nc_cide <- nc_open(f_cide)
+print(nc_cide)
+
+nc_harmonie <- nc_open(f_harmonie)
+print(nc_harmonie)
+
+
+str(nc_era)
+str(nc_cide)
+str(nc_harmonie)
+
+```
+
+
+
+```{r wind_temporal_data, fig.width=14, fig.height=5, dpi=300, fig.path="figures/"}
+source("load_data.R")
+datasets <- c("ERA5Land", "CIDE", "HARMONIE")
+lonLim   <- c(-9.5, 4.3)
+latLim   <- c(36, 44)
+dat <- setNames(lapply(datasets, function(ds) {
+  load_data(year = NULL, lonLim = lonLim, latLim = latLim,
+            what = "Wind", dataset = ds)
+}), datasets)
+```
+
+
+```{r wind_temporal, fig.width=14, fig.height=5, dpi=300, fig.path="figures/"}
+cols <- grDevices::adjustcolor(
+  c("black", "red", "blue"),
+  alpha.f = 0.5
+)
+
+temporalPlot(
+  "ERA5Land" = dat$ERA5Land,
+  "CIDE" = dat$CIDE,
+  "HARMONIE" = dat$HARMONIE,
+  cols = cols
+)
+```
+
