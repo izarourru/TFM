@@ -7,7 +7,7 @@ load_data <- function(year, lonLim, latLim, what, dataset, mask = TRUE, season =
       f <- "/lustre/gmeteo/WORK/ARTICULOS/2024_Mirones_FWI_Emulator/data/ncml/sfcwind_ERA5Land.ncml"
     } else {
       var <- what
-      f <- paste0("/lustre/gmeteo/WORK/urrutxuai/data/data_derived/fwi/", what, "_ERA5Land.nc")
+      f <- paste0("/lustre/gmeteo/WORK/urrutxuai/final/data_derived/fwi/", what, "_ERA5Land.nc")
     }
   } else if (dataset == "CIDE") {
     if (what == "Wind") {
@@ -15,7 +15,7 @@ load_data <- function(year, lonLim, latLim, what, dataset, mask = TRUE, season =
       f <- "/lustre/gmeteo/WORK/urrutxuai/data/ncml/CIDE_sfcWind_1961_2021_0.1grid.ncml"  
     } else {
       var <- what
-      f <- paste0("/lustre/gmeteo/WORK/urrutxuai/data/data_derived/fwi/", what, "_CIDE.nc")
+      f <- paste0("/lustre/gmeteo/WORK/urrutxuai/final/data_derived/fwi/", what, "_CIDE.nc")
     }
   } else if (dataset == "HARMONIE") {
     if (what == "Wind") {
@@ -23,7 +23,7 @@ load_data <- function(year, lonLim, latLim, what, dataset, mask = TRUE, season =
       f <- "/lustre/gmeteo/WORK/urrutxuai/data/ncml/HARMONIE_sfcWind_0.1grid.ncml"
     } else {
       var <- what
-      f <- paste0("/lustre/gmeteo/WORK/urrutxuai/data/data_derived/fwi/", what, "_HARMONIE.nc")
+      f <- paste0("/lustre/gmeteo/WORK/urrutxuai/final/data_derived/fwi/", what, "_HARMONIE.nc")
     }
   }
 
