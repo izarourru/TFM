@@ -10,6 +10,7 @@ This project examines how the choice of near-surface wind dataset — ERA5-Land,
 
 | File | Description | Rendered output |
 |---|---|---|
+| `fwi.R` | Compute FWI, FFMC, ISI and BUI with every dataset | — |
 | `load_data.R` | Loads and prepares the wind, FWI, ISI, and BUI data used across the analysis | — |
 | `data_sources.Rmd` | Wind climatologies and temporal comparisons across the three datasets | [View](https://htmlpreview.github.io/?https://github.com/izarourru/TFM/blob/main/html/data_sources.html) |
 | `ISI_BUI.Rmd` | Joint distribution of ISI and BUI | [View](https://htmlpreview.github.io/?https://github.com/izarourru/TFM/blob/main/html/ISI_BUI.html) |
